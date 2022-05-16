@@ -43,8 +43,8 @@
  * @note A suitable pull-up resistor should be connected to the selected GPIO line
  *
  */
-#ifndef __DHT_SENSOR_H__
-#define __DHT_SENSOR_H__
+#ifndef __DHT_H__
+#define __DHT_H__
 
 #include <driver/gpio.h>
 #include <esp_err.h>

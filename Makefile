@@ -3,7 +3,6 @@
 # project subdirectory.
 #
 
-PROJECT_NAME := red_mesh
+PROJECT_NAME := proyecto_redes
 
 include $(IDF_PATH)/make/project.mk
-
