@@ -35,6 +35,8 @@
 bool is_running;
 bool is_mesh_connected;
 int mesh_layer;
+int config_time;
+float config_variation;
 
 esp_err_t init_mesh();
 

@@ -1,3 +1,6 @@
+#ifndef __UTILS_H__
+#define __UTILS_H__
+
 #include <stddef.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -53,3 +56,5 @@ char** str_split(char* a_str, const char a_delim)
 
     return result;
 }
+
+#endif

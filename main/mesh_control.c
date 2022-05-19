@@ -1,3 +1,7 @@
+// This flag can be used to compile the code with sensor or without sensor
+// depending if it's commented or not
+#define HAS_SENSORS
+
 #include <string.h>
 #include "mesh_control.h"
 #include "esp_wifi.h"
@@ -8,47 +12,31 @@
 #include "nvs_flash.h"
 #include "driver/gpio.h"
 #include "freertos/semphr.h"
+#include "mqtt_control.h"
+#include "utils.h"
 
 static const char *MESH_TAG = "mesh_control";
 
 // Mesh network id
 static const uint8_t MESH_ID[6] = { 0x77, 0x77, 0x77, 0x77, 0x77, 0x77};
 
-static uint8_t tx_buf[TX_SIZE] = { 0, };
 static uint8_t rx_buf[RX_SIZE] = { 0, };
 static mesh_addr_t mesh_parent_addr;
 static esp_netif_t *netif_sta = NULL;
 
-void esp_mesh_p2p_tx_main(void *arg)
-{
-    //int i;
-    //esp_err_t err;
-    //int send_count = 0;
-    //mesh_addr_t route_table[CONFIG_MESH_ROUTE_TABLE_SIZE];
-    //int route_table_size = 0;
-    mesh_data_t data;
-    data.data = tx_buf;
-    data.size = sizeof(tx_buf);
-    data.proto = MESH_PROTO_BIN;
-    data.tos = MESH_TOS_P2P;
-    is_running = true;
+// Multicast address for leaf nodes
+const uint8_t SENSORS_MULTICAST[6] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0x00 };
 
-    while (is_running) {
-      ESP_LOGI(MESH_TAG, "layer:%d, rtableSize:%d, %s", mesh_layer,
-                esp_mesh_get_routing_table_size(),
-                (is_mesh_connected && esp_mesh_is_root()) ? "ROOT" : is_mesh_connected ? "NODE"
-                                                                                      : "DISCONNECT");
-      vTaskDelay(5000 / portTICK_RATE_MS);
-    }
-    vTaskDelete(NULL);
-}
-
+/**
+ * @brief This function is used to get de data receive from the mesh
+ * network
+ * 
+ * @param arg 
+ */
 void esp_mesh_p2p_rx_main(void *arg)
 {
-    //int recv_count = 0;
     esp_err_t err;
     mesh_addr_t from;
-    //int send_count = 0;
     mesh_data_t data;
     int flag = 0;
     data.data = rx_buf;
@@ -62,6 +50,26 @@ void esp_mesh_p2p_rx_main(void *arg)
             ESP_LOGE(MESH_TAG, "err:0x%x, size:%d", err, data.size);
             continue;
         }
+        ESP_LOGI(MESH_TAG, "GOT MESSAGE FROM NODE "MACSTR" :%s", MAC2STR(from.addr), data.data);
+
+        // The root node receives data from the leaf and sends it via MQTT
+        if (mesh_layer == 1) {
+            // Format of received data: topic;sensor_read
+            char** tokens;
+            tokens = str_split((char*) data.data, ';');
+            mqtt_app_publish(tokens[0], tokens[1]);
+        } else {// The leaf nodes receive configuration data
+            // Config data it's received in format time,variation
+            // so we need to split it and convert it to the required types
+            char** tokens;
+            tokens = str_split((char*) data.data, ';');
+
+            // Set sensors config
+            config_time = atoi(tokens[0]);
+            config_variation = strtof(tokens[1], NULL);
+            ESP_LOGI(MESH_TAG, "Config: time=%d variation=%f", config_time, config_variation);
+        }
+
         vTaskDelay(1000 / portTICK_RATE_MS);
     }
     vTaskDelete(NULL);
@@ -72,7 +80,6 @@ esp_err_t esp_mesh_comm_p2p_start(void)
     static bool is_comm_p2p_started = false;
     if (!is_comm_p2p_started) {
         is_comm_p2p_started = true;
-        xTaskCreate(esp_mesh_p2p_tx_main, "MPTX", 3072, NULL, 5, NULL);
         xTaskCreate(esp_mesh_p2p_rx_main, "MPRX", 3072, NULL, 5, NULL);
     }
     return ESP_OK;
@@ -308,6 +315,11 @@ esp_err_t init_mesh() {
     is_running = true;
     is_mesh_connected = false;
     mesh_layer = -1;
+
+    // Initialize config
+    config_time = 10;
+    config_variation = 0.5f;
+
     ESP_ERROR_CHECK(nvs_flash_init());
     /*  tcpip initialization */
     ESP_ERROR_CHECK(esp_netif_init());
@@ -358,6 +370,10 @@ esp_err_t init_mesh() {
     memcpy((uint8_t *) &cfg.mesh_ap.password, CONFIG_MESH_AP_PASSWD,
             strlen(CONFIG_MESH_AP_PASSWD));
     ESP_ERROR_CHECK(esp_mesh_set_config(&cfg));
+#ifdef HAS_SENSORS
+    /* configure multicast address for leaf */
+    ESP_ERROR_CHECK(esp_mesh_set_group_id(&SENSORS_MULTICAST, 1));
+#endif
     /* mesh start */
     ESP_ERROR_CHECK(esp_mesh_start());
 #ifdef CONFIG_MESH_ENABLE_PS
