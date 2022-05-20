@@ -44,5 +44,5 @@ int filtrar_datos()
  */
 float calcular_porcentaje_humedad(){
     int valor_digital = filtrar_datos();
-    return -0.0444*valor_digital + 177.78;
+    return 0.0448430 * valor_digital - 12.107623;
 }
